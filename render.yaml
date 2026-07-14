@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: vaultline
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: MASTER_KEY
+        generateValue: true
+      - key: PUBLIC_URL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: OIDC_ISSUER
+        sync: false
+      - key: OIDC_CLIENT_ID
+        sync: false
+      - key: OIDC_CLIENT_SECRET
+        sync: false
+    disk:
+      name: vaultline-data
+      mountPath: /var/data
+      sizeGB: 5

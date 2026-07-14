@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Config Rooms — private file sharing</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F6F8F5; --surface:#FFFFFF; --ink:#17211E; --ink-soft:#5A6663;
+  --line:#DCE2DC; --accent:#0E6E5C; --accent-ink:#0A5044; --accent-soft:#E3F0EC;
+  --brass:#A9761F; --brass-soft:#F6EEDC; --danger:#A63D2F; --danger-soft:#F7E7E3;
+  --radius:10px; --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 'Public Sans',sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;line-height:1.15}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font:inherit}
+.hidden{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ---------- landing ---------- */
+#landing{min-height:100%;display:flex;align-items:center;justify-content:center;padding:32px 16px}
+.gate{width:100%;max-width:440px}
+.gate .wordmark{font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.gate h1{font-size:34px;margin-bottom:6px}
+.gate .sub{color:var(--ink-soft);margin-bottom:26px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+.tabs{display:flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px;margin-bottom:18px}
+.tabs button{flex:1;padding:8px;border-radius:6px;color:var(--ink-soft);font-weight:600}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(23,33,30,.08)}
+label{display:block;font-size:13px;font-weight:600;margin:14px 0 5px}
+label:first-of-type{margin-top:0}
+.field{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.field:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+.mono{font-family:var(--mono)}
+.btn{display:inline-flex;align-items:center;gap:8px;justify-content:center;padding:10px 16px;border-radius:8px;font-weight:600}
+.btn-primary{background:var(--accent);color:#fff;width:100%;margin-top:20px}
+.btn-primary:hover{background:var(--accent-ink)}
+.btn-quiet{border:1px solid var(--line);background:var(--surface)}
+.btn-quiet:hover{border-color:var(--ink-soft)}
+.btn-danger{color:var(--danger)}
+.form-err{color:var(--danger);font-size:13px;margin-top:12px;min-height:1em}
+.gate .fine{font-size:12.5px;color:var(--ink-soft);margin-top:16px;line-height:1.5}
+.mode-banner{background:var(--brass-soft);border:1px solid var(--brass);border-radius:8px;padding:10px 14px;font-size:13px;color:#6d4c12;margin-bottom:16px;line-height:1.5}
+
+/* ---------- key tag (signature) ---------- */
+.key-tag{position:relative;display:inline-flex;align-items:center;gap:12px;background:var(--brass-soft);border:1.5px solid var(--brass);border-radius:8px 24px 24px 8px;padding:14px 26px 14px 18px;margin:8px 0}
+.key-tag::after{content:"";position:absolute;right:9px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:var(--bg);border:1.5px solid var(--brass)}
+.key-tag .code{font-family:var(--mono);font-weight:600;font-size:19px;letter-spacing:.08em;color:var(--brass)}
+.key-tag .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--brass);opacity:.75;display:block}
+
+/* ---------- app shell ---------- */
+#app{display:flex;min-height:100vh}
+aside{width:264px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:20px 16px;display:flex;flex-direction:column;gap:20px}
+aside .room-name{font-family:'Bricolage Grotesque';font-weight:700;font-size:19px;word-break:break-word}
+aside .you{font-size:13px;color:var(--ink-soft)}
+.side-h{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.side-h button{color:var(--accent);font-size:12px;font-weight:600;letter-spacing:0;text-transform:none}
+.folder-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:7px;font-weight:500}
+.folder-item:hover{background:var(--bg)}
+.folder-item[aria-current="true"]{background:var(--accent-soft);color:var(--accent-ink)}
+.folder-item .badge{margin-left:auto;font-size:10.5px;font-family:var(--mono);color:var(--ink-soft)}
+.member{display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:13.5px}
+.avatar{width:22px;height:22px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.member .tag{font-size:10.5px;font-family:var(--mono);color:var(--brass)}
+aside .foot{margin-top:auto;display:flex;flex-direction:column;gap:8px}
+aside .foot .btn{width:100%;font-size:13.5px;padding:8px}
+
+main{flex:1;padding:26px 30px;min-width:0}
+.main-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.main-head h2{font-size:24px}
+.main-head .meta{color:var(--ink-soft);font-size:13.5px;margin-top:3px}
+.head-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* dropzone + files */
+.dropzone{border:1.5px dashed var(--line);border-radius:var(--radius);padding:26px;text-align:center;color:var(--ink-soft);background:var(--surface);transition:border-color .15s, background .15s;margin-bottom:18px}
+.dropzone.armed{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.dropzone strong{color:var(--ink)}
+.dropzone .fine{font-size:12.5px;margin-top:6px}
+.dropzone button{color:var(--accent);font-weight:600;text-decoration:underline}
+.dir-group{margin-bottom:4px}
+.dir-label{font-family:var(--mono);font-size:12px;color:var(--ink-soft);padding:10px 2px 4px}
+.file-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 14px;margin-bottom:6px}
+.file-row .fname{font-family:var(--mono);font-size:13.5px;word-break:break-all;text-align:left}
+button.fname:hover{color:var(--accent);text-decoration:underline}
+.file-row .fmeta{font-size:12px;color:var(--ink-soft);margin-left:auto;white-space:nowrap}
+.file-row .row-actions{display:flex;gap:2px}
+.icon-btn{padding:6px;border-radius:6px;color:var(--ink-soft);line-height:0}
+.icon-btn:hover{background:var(--bg);color:var(--ink)}
+.icon-btn.danger:hover{color:var(--danger);background:var(--danger-soft)}
+.empty{padding:40px 20px;text-align:center;color:var(--ink-soft)}
+.empty h3{font-size:17px;color:var(--ink);margin-bottom:6px}
+.up-status{font-size:13px;color:var(--ink-soft);margin:-8px 0 8px;font-family:var(--mono)}
+progress{width:100%;height:6px;margin-bottom:6px}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(23,33,30,.42);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modal{background:var(--surface);border-radius:var(--radius);padding:22px;width:100%;max-width:460px;max-height:90vh;overflow:auto}
+.modal.wide{max-width:760px}
+.modal h3{font-size:19px;margin-bottom:4px}
+.modal .sub{color:var(--ink-soft);font-size:13.5px;margin-bottom:16px;word-break:break-word}
+.perm-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.perm-row:last-of-type{border-bottom:none}
+.perm-row .who{flex:1;font-weight:500}
+.perm-row label{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500;margin:0;color:var(--ink-soft)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.switch-row{display:flex;align-items:center;gap:8px;margin:12px 0;font-size:14px}
+.preview-pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12.5px;line-height:1.6;overflow:auto;max-height:56vh;white-space:pre;tab-size:2}
+.act-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px;align-items:flex-start}
+.act-row:last-of-type{border-bottom:none}
+.act-row .when{margin-left:auto;font-size:11.5px;color:var(--ink-soft);white-space:nowrap;padding-top:2px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13.5px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+
+@media (max-width:760px){
+  #app{flex-direction:column}
+  aside{width:100%;border-right:none;border-bottom:1px solid var(--line)}
+  main{padding:18px 14px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ============ LANDING ============ -->
+<div id="landing">
+  <div class="gate">
+    <div class="wordmark">Config Rooms</div>
+    <h1>One room. One key. Your team's files.</h1>
+    <p class="sub">Create a private room, hand the key code to your team, and drop configs straight in — folders and zips included.</p>
+    <div class="mode-banner hidden" id="modeBanner"></div>
+    <div class="card">
+      <div class="tabs" role="tablist">
+        <button id="tabCreate" role="tab" aria-selected="true" onclick="setTab('create')">Create a room</button>
+        <button id="tabJoin" role="tab" aria-selected="false" onclick="setTab('join')">Join with a code</button>
+      </div>
+      <div id="paneCreate">
+        <label for="cRoom">Room name</label>
+        <input class="field" id="cRoom" placeholder="e.g. project-atlas" maxlength="48">
+        <label for="cName">Your name</label>
+        <input class="field" id="cName" placeholder="How teammates will see you" maxlength="24">
+        <button class="btn btn-primary" onclick="createRoom()">Create room & get key code</button>
+      </div>
+      <div id="paneJoin" class="hidden">
+        <label for="jCode">Room key code</label>
+        <input class="field mono" id="jCode" placeholder="XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+        <label for="jName">Your name</label>
+        <input class="field" id="jName" placeholder="How teammates will see you" maxlength="24">
+        <button class="btn btn-primary" onclick="joinRoom()">Unlock room</button>
+      </div>
+      <p class="form-err" id="gateErr" role="alert"></p>
+    </div>
+    <p class="fine">The key code never appears in a URL and is never stored — everything in a room is encrypted with it, so only people holding the code can read anything. Files up to 50 MB each; large files upload in encrypted chunks and can take a moment.</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <aside>
+    <div>
+      <div class="room-name" id="sbRoom"></div>
+      <div class="you">signed in as <strong id="sbYou"></strong></div>
+    </div>
+    <nav>
+      <div class="side-h">Folders <button onclick="openNewFolder()">+ New</button></div>
+      <div id="folderList"></div>
+    </nav>
+    <div>
+      <div class="side-h">Members</div>
+      <div id="memberList"></div>
+    </div>
+    <div class="foot">
+      <button class="btn btn-quiet" onclick="showActivity()">Activity log</button>
+      <button class="btn btn-quiet" onclick="showInvite()">Show key code</button>
+      <button class="btn btn-quiet" onclick="syncRoom(true)">Sync now</button>
+      <button class="btn btn-quiet btn-danger" onclick="leaveRoom()">Leave room</button>
+    </div>
+  </aside>
+  <main>
+    <div class="mode-banner hidden" id="modeBannerApp"></div>
+    <div id="folderHome">
+      <div class="main-head"><div><h2>Pick a folder</h2><p class="meta">Choose a shared folder on the left, or create one to start dropping files.</p></div></div>
+      <div class="empty"><h3>Nothing selected yet</h3><p>Folders you create can be visible to everyone or just the teammates you pick.</p></div>
+    </div>
+    <div id="folderView" class="hidden">
+      <div class="main-head">
+        <div><h2 id="fvName"></h2><p class="meta" id="fvMeta"></p></div>
+        <div class="head-actions">
+          <button class="btn btn-quiet" id="fvDownloadAll" onclick="downloadFolderZip()">Download all (.zip)</button>
+          <button class="btn btn-quiet" id="fvSettings" onclick="openFolderSettings()">Access & permissions</button>
+          <button class="btn btn-quiet btn-danger" id="fvDelete" onclick="deleteFolder()">Delete folder</button>
+        </div>
+      </div>
+      <div class="dropzone" id="dropzone">
+        <strong>Drag & drop files, whole folders, or a .zip</strong><br>
+        Zips are unpacked automatically, keeping their folder structure.
+        <div class="fine">or <button onclick="document.getElementById('filePick').click()">browse for files</button> · up to 50 MB per file</div>
+        <input type="file" id="filePick" multiple class="hidden" onchange="pickFiles(this.files)">
+      </div>
+      <progress id="upProg" class="hidden" max="100" value="0"></progress>
+      <div class="up-status hidden" id="upStatus"></div>
+      <div id="fileList"></div>
+    </div>
+  </main>
+</div>
+
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* ---------------- storage adapter ----------------
+   Prefers Claude's shared artifact storage (syncs across all users of the
+   artifact). Falls back to this browser's local storage, then to in-memory. */
+const store=(()=>{ 
+  if(typeof window.storage==="object"&&window.storage&&typeof window.storage.set==="function"){
+    return{
+      mode:"shared",
+      async get(k){try{const r=await window.storage.get(k,true);return r?r.value:null;}catch(e){return null;}},
+      async set(k,v){const r=await window.storage.set(k,v,true);if(!r)throw new Error("write rejected");},
+      async del(k){try{await window.storage.delete(k,true);}catch(e){}}
+    };
+  }
+  let ls=null;
+  try{window.localStorage.setItem("__cr_probe","1");window.localStorage.removeItem("__cr_probe");ls=window.localStorage;}catch(e){}
+  if(ls)return{
+    mode:"local",
+    async get(k){return ls.getItem(k);},
+    async set(k,v){ls.setItem(k,v);},
+    async del(k){ls.removeItem(k);}
+  };
+  const mem=new Map();
+  return{
+    mode:"memory",
+    async get(k){return mem.has(k)?mem.get(k):null;},
+    async set(k,v){mem.set(k,v);},
+    async del(k){mem.delete(k);}
+  };
+})();
+function modeBannerText(){
+  if(store.mode==="local")return "Heads-up: shared syncing isn't available where this page is running, so rooms are saved only in this browser. To have teammates on other devices see the same room, run the app inside Claude (where shared storage is available) or host it with a backend. Local browser storage is also small — very large files may not fit.";
+  if(store.mode==="memory")return "Heads-up: no storage is available here, so this session is temporary — everything disappears when the tab closes.";
+  return "";
+}
+
+/* ---------------- crypto helpers ---------------- */
+const te=new TextEncoder(),td=new TextDecoder();
+function b64(u8){let s="";const CH=0x8000;for(let i=0;i<u8.length;i+=CH)s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));return btoa(s);}
+function unb64(s){const bin=atob(s),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);return u8;}
+async function deriveKey(code){
+  const mat=await crypto.subtle.importKey("raw",te.encode(code.trim().toUpperCase()),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt:te.encode("config-rooms-v1"),iterations:150000,hash:"SHA-256"},mat,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+async function roomIdFromCode(code){
+  const h=await crypto.subtle.digest("SHA-256",te.encode("config-rooms-id:"+code.trim().toUpperCase()));
+  return Array.from(new Uint8Array(h).slice(0,16)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function encBytes(key,u8){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,u8));
+  return JSON.stringify({iv:b64(iv),ct:b64(ct)});
+}
+async function decBytes(key,str){
+  const {iv,ct}=JSON.parse(str);
+  return new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(iv)},key,unb64(ct)));
+}
+const encJSON=async(k,o)=>encBytes(k,te.encode(JSON.stringify(o)));
+const decJSON=async(k,s)=>JSON.parse(td.decode(await decBytes(k,s)));
+function makeCode(){
+  const A="ABCDEFGHJKMNPQRSTUVWXYZ23456789",r=crypto.getRandomValues(new Uint8Array(12));
+  let c="";for(let i=0;i<12;i++){c+=A[r[i]%A.length];if(i===3||i===7)c+="-";}
+  return c;
+}
+const uid=()=>Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(16).padStart(2,"0")).join("");
+
+/* ---------------- state & limits ---------------- */
+let S={code:null,key:null,roomId:null,room:null,me:null,folderId:null,pollTimer:null};
+const roomKey=id=>"cr:"+id, chunkKey=(rid,fid,i)=>"crf:"+rid+":"+fid+":"+i;
+const CHUNK=3*1024*1024;          /* raw bytes per encrypted chunk (~4.3 MB stored) */
+const MAX_RAW=50*1024*1024;       /* 50 MB per file */
+const PREVIEW_MAX=2*1024*1024;    /* preview text files up to 2 MB */
+
+/* ---------------- room persistence ---------------- */
+async function loadRoomRaw(rid){return store.get(roomKey(rid));}
+async function saveRoom(){
+  S.room.updatedAt=Date.now();
+  await store.set(roomKey(S.roomId),await encJSON(S.key,S.room));
+}
+let mutating=Promise.resolve();
+function mutateRoom(fn){ /* reload → apply → save, serialized locally */
+  mutating=mutating.then(async()=>{
+    const raw=await loadRoomRaw(S.roomId);
+    if(raw){try{S.room=await decJSON(S.key,raw);}catch(e){}}
+    await fn(S.room);
+    await saveRoom();
+    render();
+  }).catch(e=>toast("Couldn't save that change — try Sync now. ("+e.message+")"));
+  return mutating;
+}
+async function syncRoom(manual){
+  const raw=await loadRoomRaw(S.roomId);
+  if(!raw)return;
+  try{
+    const fresh=await decJSON(S.key,raw);
+    if(fresh.updatedAt!==S.room.updatedAt){S.room=fresh;render();}
+    if(manual)toast("Room is up to date.");
+  }catch(e){}
+}
+function logAct(r,action){
+  r.activity=r.activity||[];
+  r.activity.unshift({by:S.me,action,ts:Date.now()});
+  if(r.activity.length>150)r.activity.length=150;
+}
+
+/* ---------------- landing ---------------- */
+function setTab(t){
+  document.getElementById("tabCreate").setAttribute("aria-selected",t==="create");
+  document.getElementById("tabJoin").setAttribute("aria-selected",t==="join");
+  document.getElementById("paneCreate").classList.toggle("hidden",t!=="create");
+  document.getElementById("paneJoin").classList.toggle("hidden",t!=="join");
+  gateErr("");
+}
+const gateErr=m=>document.getElementById("gateErr").textContent=m;
+function needCrypto(){
+  if(!window.crypto||!crypto.subtle){gateErr("This browser doesn't support the encryption this app needs (needs a secure HTTPS context).");return true;}
+  return false;
+}
+async function createRoom(){
+  if(needCrypto())return;
+  const name=document.getElementById("cRoom").value.trim();
+  const me=document.getElementById("cName").value.trim();
+  if(!name||!me)return gateErr("Give the room a name and tell us yours.");
+  const code=makeCode();
+  try{
+    S.code=code;S.key=await deriveKey(code);S.roomId=await roomIdFromCode(code);S.me=me;
+    S.room={name,owner:me,members:[{name:me}],folders:[],activity:[],createdAt:Date.now(),updatedAt:Date.now()};
+    logAct(S.room,"created the room");
+    await saveRoom();
+    enterApp();
+    showInvite(true);
+  }catch(e){gateErr("Couldn't create the room: "+e.message);}
+}
+async function joinRoom(){
+  if(needCrypto())return;
+  const code=document.getElementById("jCode").value.trim();
+  const me=document.getElementById("jName").value.trim();
+  if(!code||!me)return gateErr("Enter the key code and your name.");
+  try{
+    const key=await deriveKey(code),rid=await roomIdFromCode(code);
+    const raw=await loadRoomRaw(rid);
+    if(!raw)return gateErr("No room answers to that code. Check it and try again.");
+    let room;
+    try{room=await decJSON(key,raw);}catch(e){return gateErr("No room answers to that code. Check it and try again.");}
+    S.code=code.toUpperCase();S.key=key;S.roomId=rid;S.me=me;S.room=room;
+    if(!room.members.some(m=>m.name===me)){
+      await mutateRoom(r=>{
+        if(!r.members.some(m=>m.name===me)){r.members.push({name:me});logAct(r,"joined the room");}
+      });
+    }
+    enterApp();
+  }catch(e){gateErr("Couldn't join: "+e.message);}
+}
+function enterApp(){
+  document.getElementById("landing").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  S.folderId=null;
+  render();
+  clearInterval(S.pollTimer);
+  S.pollTimer=setInterval(()=>syncRoom(false),20000);
+}
+function leaveRoom(){
+  clearInterval(S.pollTimer);
+  S={code:null,key:null,roomId:null,room:null,me:null,folderId:null,pollTimer:null};
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("landing").classList.remove("hidden");
+  ["cRoom","cName","jCode","jName"].forEach(id=>document.getElementById(id).value="");
+  gateErr("");
+}
+
+/* ---------------- permissions ---------------- */
+const isOwner=u=>S.room.owner===u;
+const canSee=(f,u)=>isOwner(u)||f.owner===u||f.visibility==="all"||(Array.isArray(f.visibility)&&f.visibility.includes(u));
+const canWrite=(f,u)=>isOwner(u)||f.owner===u||(f.write||[]).includes(u);
+
+/* ---------------- render ---------------- */
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TEXT_EXT=/\.(txt|md|markdown|json|ya?ml|toml|ini|cfg|conf|config|env|xml|html?|css|scss|js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|java|kt|c|h|hpp|cpp|cs|sh|bash|zsh|bat|ps1|sql|csv|tsv|log|properties|gradle|tf|proto|graphql|svg|lock|gitignore|dockerignore|editorconfig)$/i;
+const isTexty=n=>TEXT_EXT.test(n)||/^(dockerfile|makefile|license|readme|\.env.*)$/i.test(n)||!n.includes(".");
+function render(){
+  if(!S.room)return;
+  document.getElementById("sbRoom").textContent=S.room.name;
+  document.getElementById("sbYou").textContent=S.me;
+  const visible=S.room.folders.filter(f=>canSee(f,S.me));
+  document.getElementById("folderList").innerHTML=visible.map(f=>`
+    <button class="folder-item" aria-current="${f.id===S.folderId}" onclick="openFolder('${f.id}')">
+      <span aria-hidden="true">▸</span> ${esc(f.name)}
+      <span class="badge">${canWrite(f,S.me)?"rw":"r"}${f.visibility!=="all"?" ·🔒":""}</span>
+    </button>`).join("")||`<p style="font-size:13px;color:var(--ink-soft);padding:4px 2px">No folders yet — create the first one.</p>`;
+  document.getElementById("memberList").innerHTML=S.room.members.map(m=>`
+    <div class="member"><span class="avatar">${esc(m.name.slice(0,2).toUpperCase())}</span>${esc(m.name)}${m.name===S.room.owner?'<span class="tag">owner</span>':""}${m.name===S.me?'<span class="tag" style="color:var(--ink-soft)">you</span>':""}</div>`).join("");
+  const f=S.room.folders.find(x=>x.id===S.folderId);
+  if(!f||!canSee(f,S.me)){S.folderId=null;}
+  document.getElementById("folderHome").classList.toggle("hidden",!!S.folderId);
+  document.getElementById("folderView").classList.toggle("hidden",!S.folderId);
+  if(S.folderId)renderFolder(S.room.folders.find(x=>x.id===S.folderId));
+}
+function renderFolder(f){
+  const w=canWrite(f,S.me),manage=f.owner===S.me||isOwner(S.me);
+  document.getElementById("fvName").textContent=f.name;
+  const vis=f.visibility==="all"?"visible to everyone":"visible to "+f.visibility.join(", ");
+  document.getElementById("fvMeta").textContent=`${f.files.length} file${f.files.length===1?"":"s"} · ${vis} · created by ${f.owner}${w?"":" · read-only for you"}`;
+  document.getElementById("fvSettings").classList.toggle("hidden",!manage);
+  document.getElementById("fvDelete").classList.toggle("hidden",!manage);
+  document.getElementById("fvDownloadAll").classList.toggle("hidden",f.files.length===0);
+  document.getElementById("dropzone").classList.toggle("hidden",!w);
+  const groups={};
+  f.files.forEach(fl=>{(groups[fl.dir||""]=groups[fl.dir||""]||[]).push(fl);});
+  const dirs=Object.keys(groups).sort();
+  document.getElementById("fileList").innerHTML=f.files.length===0
+    ? `<div class="empty"><h3>Folder is empty</h3><p>${w?"Drop a file, a folder, or a zip above to fill it.":"Nothing has been shared here yet."}</p></div>`
+    : dirs.map(d=>`
+      <div class="dir-group">
+        ${d?`<div class="dir-label">${esc(d)}/</div>`:""}
+        ${groups[d].map(fl=>{
+          const texty=isTexty(fl.name)&&fl.size<=PREVIEW_MAX;
+          const nameEl=texty
+            ?`<button class="fname" title="Preview ${esc(fl.name)}" onclick="previewFile('${fl.id}')">${esc(fl.name)}</button>`
+            :`<span class="fname">${esc(fl.name)}</span>`;
+          return `<div class="file-row">
+            ${nameEl}
+            <span class="fmeta">${fmtSize(fl.size)} · ${esc(fl.by)}</span>
+            <span class="row-actions">
+              ${texty?`<button class="icon-btn" title="Preview" onclick="previewFile('${fl.id}')">👁</button>`:""}
+              <button class="icon-btn" title="Download ${esc(fl.name)}" onclick="downloadFile('${fl.id}')">⬇</button>
+              ${w?`<button class="icon-btn danger" title="Delete ${esc(fl.name)}" onclick="deleteFile('${fl.id}')">✕</button>`:""}
+            </span>
+          </div>`;}).join("")}
+      </div>`).join("");
+}
+const fmtSize=n=>n<1024?n+" B":n<1048576?(n/1024).toFixed(1)+" KB":(n/1048576).toFixed(2)+" MB";
+function openFolder(id){S.folderId=id;render();}
+
+/* ---------------- folders ---------------- */
+function openNewFolder(){
+  modal(`
+    <h3>New shared folder</h3>
+    <p class="sub">You'll be its owner and can set who sees it afterwards.</p>
+    <label for="nfName">Folder name</label>
+    <input class="field" id="nfName" maxlength="48" placeholder="e.g. deploy-configs">
+    <div class="modal-actions">
+      <button class="btn btn-quiet" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto;margin:0" onclick="createFolder()">Create folder</button>
+    </div>`);
+  document.getElementById("nfName").focus();
+}
+async function createFolder(){
+  const name=document.getElementById("nfName").value.trim();
+  if(!name)return;
+  const id=uid();
+  closeModal();
+  await mutateRoom(r=>{
+    r.folders.push({id,name,owner:S.me,visibility:"all",write:[],files:[]});
+    logAct(r,`created folder “${name}”`);
+  });
+  S.folderId=id;render();
+}
+function openFolderSettings(){
+  const f=S.room.folders.find(x=>x.id===S.folderId);if(!f)return;
+  const others=S.room.members.filter(m=>m.name!==f.owner);
+  modal(`
+    <h3>Access & permissions</h3>
+    <p class="sub">“${esc(f.name)}” — you and the room owner always have full access.</p>
+    <div class="switch-row"><input type="checkbox" id="visAll" ${f.visibility==="all"?"checked":""}> <label for="visAll" style="margin:0;font-weight:500">Visible to everyone in the room</label></div>
+    <div id="permRows">
+      ${others.map(m=>{
+        const seen=f.visibility==="all"||f.visibility.includes(m.name);
+        const wr=(f.write||[]).includes(m.name);
+        return `<div class="perm-row"><span class="who">${esc(m.name)}</span>
+          <label><input type="checkbox" class="pv" data-n="${esc(m.name)}" ${seen?"checked":""}> can view</label>
+          <label><input type="checkbox" class="pw" data-n="${esc(m.name)}" ${wr?"checked":""}> can edit</label></div>`;
+      }).join("")||'<p class="sub" style="margin:8px 0 0">No other members yet — permissions will apply as people join.</p>'}
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-quiet" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="width:auto;margin:0" onclick="saveFolderSettings()">Save access</button>
+    </div>`);
+}
+async function saveFolderSettings(){
+  const all=document.getElementById("visAll").checked;
+  const vis=all?"all":Array.from(document.querySelectorAll(".pv:checked")).map(el=>el.dataset.n);
+  const write=Array.from(document.querySelectorAll(".pw:checked")).map(el=>el.dataset.n);
+  const fid=S.folderId;
+  closeModal();
+  await mutateRoom(r=>{
+    const f=r.folders.find(x=>x.id===fid);if(!f)return;
+    f.visibility=all?"all":Array.from(new Set([...vis,f.owner]));
+    f.write=write;
+    logAct(r,`changed access on “${f.name}”`);
+  });
+  toast("Access updated.");
+}
+async function deleteFolder(){
+  const f=S.room.folders.find(x=>x.id===S.folderId);if(!f)return;
+  if(!confirm(`Delete “${f.name}” and its ${f.files.length} file(s) for everyone?`))return;
+  const metas=f.files.slice(),fid=f.id,fname=f.name;
+  await mutateRoom(r=>{
+    r.folders=r.folders.filter(x=>x.id!==fid);
+    logAct(r,`deleted folder “${fname}”`);
+  });
+  S.folderId=null;render();
+  for(const m of metas)for(let i=0;i<(m.chunks||1);i++)await store.del(chunkKey(S.roomId,m.id,i));
+  toast("Folder deleted.");
+}
+
+/* ---------------- uploads (chunked, up to 50 MB/file) ---------------- */
+const dz=document.getElementById("dropzone");
+dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("armed");});
+dz.addEventListener("dragleave",()=>dz.classList.remove("armed"));
+dz.addEventListener("drop",async e=>{
+  e.preventDefault();dz.classList.remove("armed");
+  const entries=[];
+  if(e.dataTransfer.items){
+    const jobs=[];
+    for(const item of e.dataTransfer.items){
+      const entry=item.webkitGetAsEntry&&item.webkitGetAsEntry();
+      if(entry)jobs.push(walkEntry(entry,"",entries));
+      else{const fl=item.getAsFile();if(fl)entries.push({file:fl,dir:""});}
+    }
+    await Promise.all(jobs);
+  }else{
+    for(const fl of e.dataTransfer.files)entries.push({file:fl,dir:""});
+  }
+  await ingest(entries);
+});
+function walkEntry(entry,dir,out){
+  return new Promise(res=>{
+    if(entry.isFile){entry.file(f=>{out.push({file:f,dir});res();},()=>res());}
+    else if(entry.isDirectory){
+      const rd=entry.createReader(),all=[];
+      const readMore=()=>rd.readEntries(async batch=>{
+        if(!batch.length){await Promise.all(all.map(en=>walkEntry(en,dir?dir+"/"+entry.name:entry.name,out)));res();}
+        else{all.push(...batch);readMore();}
+      },()=>res());
+      readMore();
+    }else res();
+  });
+}
+function pickFiles(list){ingest(Array.from(list).map(f=>({file:f,dir:""})));document.getElementById("filePick").value="";}
+
+async function ingest(entries){
+  const f=S.room.folders.find(x=>x.id===S.folderId);
+  if(!f||!canWrite(f,S.me))return toast("You have read-only access here.");
+  const plan=[]; /* {name, dir, u8} */
+  for(const {file,dir} of entries){
+    if(/\.zip$/i.test(file.name)){
+      try{
+        const zip=await JSZip.loadAsync(await file.arrayBuffer());
+        for(const n of Object.keys(zip.files)){
+          const zf=zip.files[n];
+          if(zf.dir)continue;
+          const u8=await zf.async("uint8array");
+          const parts=n.split("/").filter(Boolean),nm=parts.pop();
+          plan.push({name:nm,dir:[dir,...parts].filter(Boolean).join("/"),u8});
+        }
+      }catch(e){toast(`Couldn't unpack ${file.name} — is it a valid zip?`);}
+    }else{
+      plan.push({name:file.name,dir,u8:new Uint8Array(await file.arrayBuffer())});
+    }
+  }
+  if(!plan.length)return;
+  const totalChunks=plan.reduce((a,p)=>a+Math.max(1,Math.ceil(p.u8.length/CHUNK)),0);
+  const prog=document.getElementById("upProg"),status=document.getElementById("upStatus");
+  prog.classList.remove("hidden");status.classList.remove("hidden");
+  prog.max=totalChunks;prog.value=0;
+  let doneChunks=0,skipped=0;const added=[];
+  for(const p of plan){
+    const n=Math.max(1,Math.ceil(p.u8.length/CHUNK));
+    if(p.u8.length>MAX_RAW){skipped++;doneChunks+=n;prog.value=doneChunks;continue;}
+    status.textContent=`Encrypting & uploading ${p.name}…`;
+    const id=uid();let ok=true;
+    for(let i=0;i<n;i++){
+      try{
+        await store.set(chunkKey(S.roomId,id,i),await encBytes(S.key,p.u8.subarray(i*CHUNK,(i+1)*CHUNK)));
+      }catch(e){ok=false;for(let j=0;j<=i;j++)await store.del(chunkKey(S.roomId,id,j));break;}
+      doneChunks++;prog.value=doneChunks;
+    }
+    if(ok)added.push({id,name:p.name,dir:p.dir,size:p.u8.length,chunks:n,by:S.me,ts:Date.now()});
+    else skipped++;
+  }
+  const fid=S.folderId;
+  if(added.length)await mutateRoom(r=>{
+    const fo=r.folders.find(x=>x.id===fid);if(!fo)return;
+    fo.files.push(...added);
+    logAct(r,added.length===1
+      ?`shared “${added[0].name}” in “${fo.name}”`
+      :`shared ${added.length} files in “${fo.name}”`);
+  });
+  prog.classList.add("hidden");status.classList.add("hidden");
+  toast(`${added.length} file${added.length===1?"":"s"} shared${skipped?` · ${skipped} skipped (over 50 MB or storage full)`:""}.`);
+}
+
+/* ---------------- files: fetch, preview, download, delete ---------------- */
+async function getFileBytes(meta){
+  const parts=[];let total=0;
+  for(let i=0;i<(meta.chunks||1);i++){
+    const raw=await store.get(chunkKey(S.roomId,meta.id,i));
+    if(raw==null)throw new Error("missing chunk "+i);
+    const u8=await decBytes(S.key,raw);
+    parts.push(u8);total+=u8.length;
+  }
+  const out=new Uint8Array(total);let off=0;
+  for(const p of parts){out.set(p,off);off+=p.length;}
+  return out;
+}
+function findMeta(id){
+  const f=S.room.folders.find(x=>x.id===S.folderId);
+  return f&&f.files.find(x=>x.id===id);
+}
+async function previewFile(id){
+  const meta=findMeta(id);if(!meta)return;
+  toast("Opening preview…");
+  try{
+    const u8=await getFileBytes(meta);
+    let text;
+    try{text=new TextDecoder("utf-8",{fatal:true}).decode(u8);}
+    catch(e){return modal(`<h3>Can't preview</h3><p class="sub">“${esc(meta.name)}” doesn't look like a text file. You can still download it.</p><div class="modal-actions"><button class="btn btn-primary" style="width:auto;margin:0" onclick="closeModal()">OK</button></div>`);}
+    window.__previewText=text;
+    modal(`
+      <h3 class="mono" style="font-size:15px">${esc(meta.name)}</h3>
+      <p class="sub">${fmtSize(meta.size)} · shared by ${esc(meta.by)}${meta.dir?` · in ${esc(meta.dir)}/`:""}</p>
+      <pre class="preview-pre">${esc(text)}</pre>
+      <div class="modal-actions">
+        <button class="btn btn-quiet" onclick="navigator.clipboard.writeText(window.__previewText).then(()=>toast('Copied.'))">Copy contents</button>
+        <button class="btn btn-quiet" onclick="downloadFile('${meta.id}')">Download</button>
+        <button class="btn btn-primary" style="width:auto;margin:0" onclick="closeModal()">Close</button>
+      </div>`,true);
+  }catch(e){toast("Couldn't fetch that file — try Sync now.");}
+}
+async function downloadFile(id){
+  const meta=findMeta(id);if(!meta)return;
+  try{
+    triggerDownload(new Blob([await getFileBytes(meta)]),meta.name);
+  }catch(e){toast("Couldn't fetch that file — try Sync now.");}
+}
+async function downloadFolderZip(){
+  const f=S.room.folders.find(x=>x.id===S.folderId);if(!f||!f.files.length)return;
+  toast("Packing zip…");
+  const zip=new JSZip();
+  for(const meta of f.files){
+    try{zip.file((meta.dir?meta.dir+"/":"")+meta.name,await getFileBytes(meta));}catch(e){}
+  }
+  triggerDownload(await zip.generateAsync({type:"blob"}),f.name.replace(/\s+/g,"-")+".zip");
+}
+function triggerDownload(blob,name){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+async function deleteFile(id){
+  const meta=findMeta(id);if(!meta)return;
+  const fid=S.folderId;
+  await mutateRoom(r=>{
+    const fo=r.folders.find(x=>x.id===fid);if(!fo)return;
+    fo.files=fo.files.filter(x=>x.id!==id);
+    logAct(r,`deleted “${meta.name}” from “${fo.name}”`);
+  });
+  for(let i=0;i<(meta.chunks||1);i++)await store.del(chunkKey(S.roomId,id,i));
+}
+
+/* ---------------- activity log ---------------- */
+function relTime(ts){
+  const d=Date.now()-ts;
+  if(d<60e3)return "just now";
+  if(d<3600e3)return Math.floor(d/60e3)+" min ago";
+  if(d<86400e3)return Math.floor(d/3600e3)+" h ago";
+  return new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+new Date(ts).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+}
+function showActivity(){
+  const acts=(S.room.activity||[]);
+  modal(`
+    <h3>Activity</h3>
+    <p class="sub">Everything that's happened in “${esc(S.room.name)}”, newest first.</p>
+    ${acts.length?acts.map(a=>`
+      <div class="act-row">
+        <span class="avatar">${esc(a.by.slice(0,2).toUpperCase())}</span>
+        <span><strong>${esc(a.by)}</strong> ${esc(a.action)}</span>
+        <span class="when">${relTime(a.ts)}</span>
+      </div>`).join(""):'<div class="empty" style="padding:24px"><h3>Quiet so far</h3><p>Uploads, folder changes, and joins will show up here.</p></div>'}
+    <div class="modal-actions"><button class="btn btn-primary" style="width:auto;margin:0" onclick="closeModal()">Close</button></div>`,true);
+}
+
+/* ---------------- invite / modal / toast ---------------- */
+function showInvite(first){
+  modal(`
+    <h3>${first?"Your room is ready":"Room key code"}</h3>
+    <p class="sub">Anyone with this code can unlock the room, so share it privately (DM, not group chat). It's never shown in a link.</p>
+    <div class="key-tag"><div><span class="lbl">Key code</span><span class="code">${S.code}</span></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-quiet" onclick="copyCode()">Copy code</button>
+      <button class="btn btn-primary" style="width:auto;margin:0" onclick="closeModal()">Done</button>
+    </div>`);
+}
+function copyCode(){navigator.clipboard.writeText(S.code).then(()=>toast("Code copied.")).catch(()=>toast("Copy failed — select it manually."));}
+function modal(html,wide){document.getElementById("modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?" wide":""}" role="dialog" aria-modal="true">${html}</div></div>`;}
+function closeModal(){document.getElementById("modalRoot").innerHTML="";}
+let toastTimer;
+function toast(msg){
+  let t=document.querySelector(".toast");
+  if(!t){t=document.createElement("div");t.className="toast";document.body.appendChild(t);}
+  t.textContent=msg;clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.remove(),3500);
+}
+window.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+
+/* show storage-mode banner if not on shared storage */
+(function(){
+  const msg=modeBannerText();
+  if(!msg)return;
+  for(const id of ["modeBanner","modeBannerApp"]){
+    const el=document.getElementById(id);
+    el.textContent=msg;el.classList.remove("hidden");
+  }
+})();
+</script>
+</body>
+</html>
