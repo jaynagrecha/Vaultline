@@ -53,7 +53,11 @@ Phase **B** (in this build):
 - **Edit conflict** via `baseVersion` on save (409 if stale)
 - Jobs run **inside the web service** (Render Disk is not shared with separate Cron services)
 
-Phase **C** (next): nested folders, webhooks, optional OIDC/SAML/SCIM, API keys
+Phase **C** (in progress / partial):
+- Nested folders
+- **API keys** (sidebar → API keys; `Authorization: Bearer vl_…`)
+- **Webhooks** (select an org → Webhooks; HTTPS + HMAC `X-Vaultline-Signature`)
+- Still open: optional OIDC polish, SAML, SCIM
 
 ### Job env (optional)
 

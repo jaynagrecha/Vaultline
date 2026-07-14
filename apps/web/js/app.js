@@ -176,6 +176,8 @@ function shell(mainHtml) {
         <button class="btn btn-quiet" type="button" id="btnJoinInvite">Join with invite</button>
         ${canCreate ? '<button class="btn btn-quiet" type="button" id="btnNewOrg">New organization</button>' : ""}
         ${state.user.isPlatformAdmin ? '<button class="btn btn-quiet" type="button" id="btnAdmin">Admin console</button>' : ""}
+        <button class="btn btn-quiet" type="button" id="btnApiKeys">API keys</button>
+        ${state.org ? '<button class="btn btn-quiet" type="button" id="btnWebhooks">Webhooks</button>' : ""}
         <button class="btn btn-quiet btn-danger" type="button" id="btnLogout">Sign out</button>
       </div>
     </aside>
@@ -1340,6 +1342,8 @@ function wireShell() {
     clearInterval(state.poll);
     paint();
   };
+  $("btnApiKeys")?.addEventListener("click", () => openApiKeysManager());
+  $("btnWebhooks")?.addEventListener("click", () => openWebhooksManager());
   $("btnNewOrg")?.addEventListener("click", () => {
     modal(`<h3>New organization</h3>
       <label>Name</label><input class="field" id="oName">
@@ -2931,6 +2935,146 @@ async function openFolderAcl() {
   };
 
   paintModal();
+}
+
+async function openApiKeysManager() {
+  let data;
+  try {
+    data = await api("/me/api-keys");
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  const rows = (data.keys || [])
+    .map(
+      (k) => `<div class="share-row">
+      <div class="who-block">
+        <span class="who">${esc(k.name)}</span>
+        <span class="hint">${esc(k.prefix)}… · ${k.active ? "active" : "revoked"} · ${new Date(k.createdAt).toLocaleString()}</span>
+      </div>
+      ${
+        k.active
+          ? `<button class="btn btn-quiet btn-danger" type="button" data-revoke-key="${k.id}" style="width:auto;margin:0">Revoke</button>`
+          : `<span class="fmeta">revoked</span>`
+      }
+    </div>`
+    )
+    .join("");
+  modal(
+    `<h3>API keys</h3>
+    <p class="sub">Use <code>Authorization: Bearer vl_…</code> for automation. Secret is shown once on create.</p>
+    <div class="share-list">${rows || `<p class="fine" style="padding:12px">No keys yet.</p>`}</div>
+    <label>New key name</label>
+    <input class="field" id="keyName" placeholder="CI bot" maxlength="80">
+    <div class="modal-actions">
+      <button class="btn btn-quiet" type="button" id="mCancel">Close</button>
+      <button class="btn btn-primary" type="button" id="mCreateKey" style="width:auto;margin:0">Create key</button>
+    </div>`,
+    { size: "wide" }
+  );
+  $("mCancel").onclick = closeModal;
+  $("mCreateKey").onclick = async () => {
+    try {
+      const created = await api("/me/api-keys", { method: "POST", body: { name: $("keyName").value } });
+      modal(
+        `<h3>Copy your API key</h3>
+        <p class="sub">This secret will not be shown again.</p>
+        <div class="key-tag"><div><span class="lbl">Secret</span><span class="code" style="word-break:break-all">${esc(created.secret)}</span></div></div>
+        <div class="modal-actions"><button class="btn btn-primary" type="button" id="mDone" style="width:auto;margin:0">Done</button></div>`
+      );
+      $("mDone").onclick = () => {
+        closeModal();
+        openApiKeysManager();
+      };
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  document.querySelectorAll("[data-revoke-key]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("Revoke this API key?")) return;
+      try {
+        await api(`/me/api-keys/${b.dataset.revokeKey}`, { method: "DELETE" });
+        toast("Key revoked.");
+        openApiKeysManager();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  });
+}
+
+async function openWebhooksManager() {
+  if (!state.org?.id) return toast("Select an organization first.");
+  let data;
+  try {
+    data = await api(`/orgs/${state.org.id}/webhooks`);
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  const rows = (data.webhooks || [])
+    .map(
+      (w) => `<div class="share-row">
+      <div class="who-block">
+        <span class="who">${esc(w.url)}</span>
+        <span class="hint">${(w.events || []).map(esc).join(", ")} · last: ${esc(w.lastStatus || "—")}</span>
+      </div>
+      <button class="btn btn-quiet btn-danger" type="button" data-del-hook="${w.id}" style="width:auto;margin:0">Delete</button>
+    </div>`
+    )
+    .join("");
+  const eventChecks = (data.events || [])
+    .map((e) => `<label style="display:block;margin:4px 0"><input type="checkbox" data-hook-event value="${esc(e)}"> ${esc(e)}</label>`)
+    .join("");
+  modal(
+    `<h3>Webhooks</h3>
+    <p class="sub">HTTPS endpoints for org <strong>${esc(state.org.name)}</strong>. Signed with <code>X-Vaultline-Signature</code>.</p>
+    <div class="share-list">${rows || `<p class="fine" style="padding:12px">No webhooks.</p>`}</div>
+    <label>HTTPS URL</label>
+    <input class="field" id="hookUrl" placeholder="https://example.com/hooks/vaultline">
+    <p class="fine" style="margin:8px 0 4px">Events</p>
+    <div style="max-height:140px;overflow:auto;margin-bottom:10px">${eventChecks}</div>
+    <div class="modal-actions">
+      <button class="btn btn-quiet" type="button" id="mCancel">Close</button>
+      <button class="btn btn-primary" type="button" id="mAddHook" style="width:auto;margin:0">Add webhook</button>
+    </div>`,
+    { size: "wide" }
+  );
+  $("mCancel").onclick = closeModal;
+  $("mAddHook").onclick = async () => {
+    const events = [...document.querySelectorAll("[data-hook-event]:checked")].map((c) => c.value);
+    try {
+      const created = await api(`/orgs/${state.org.id}/webhooks`, {
+        method: "POST",
+        body: { url: $("hookUrl").value, events },
+      });
+      modal(
+        `<h3>Webhook created</h3>
+        <p class="sub">Save the signing secret — shown once.</p>
+        <div class="key-tag"><div><span class="lbl">Secret</span><span class="code" style="word-break:break-all">${esc(created.secret)}</span></div></div>
+        <div class="modal-actions"><button class="btn btn-primary" type="button" id="mDone" style="width:auto;margin:0">Done</button></div>`
+      );
+      $("mDone").onclick = () => {
+        closeModal();
+        openWebhooksManager();
+      };
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  document.querySelectorAll("[data-del-hook]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("Delete this webhook?")) return;
+      try {
+        await api(`/orgs/${state.org.id}/webhooks/${b.dataset.delHook}`, { method: "DELETE" });
+        toast("Webhook deleted.");
+        openWebhooksManager();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  });
 }
 
 async function openBackupManager() {

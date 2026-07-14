@@ -34,6 +34,8 @@ import * as files from "../services/files.js";
 import multer from "multer";
 import { config } from "../config.js";
 import { uploadLimiter } from "../middleware/rateLimit.js";
+import * as apiKeys from "../services/apiKeys.js";
+import * as webhooks from "../services/webhooks.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -706,6 +708,72 @@ router.delete("/files/:fileId", (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(e.code === "FORBIDDEN" ? 403 : 500).json({ error: e.message });
+  }
+});
+
+// —— API keys (Bearer vl_…) ——
+router.get("/me/api-keys", (req, res) => {
+  res.json({ keys: apiKeys.listApiKeys(req.user.id) });
+});
+
+router.post("/me/api-keys", (req, res) => {
+  try {
+    const created = apiKeys.createApiKey({
+      userId: req.user.id,
+      name: req.body?.name,
+      scopes: req.body?.scopes || ["*"],
+    });
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/me/api-keys/:keyId", (req, res) => {
+  try {
+    res.json(apiKeys.revokeApiKey({ keyId: req.params.keyId, userId: req.user.id }));
+  } catch (e) {
+    res.status(e.code === "NOT_FOUND" ? 404 : 500).json({ error: e.message });
+  }
+});
+
+// —— Org webhooks ——
+router.get("/orgs/:orgId/webhooks", (req, res) => {
+  try {
+    res.json({
+      webhooks: webhooks.listWebhooks(req.params.orgId, req.user.id),
+      events: webhooks.WEBHOOK_EVENT_TYPES,
+    });
+  } catch (e) {
+    res.status(e.code === "FORBIDDEN" ? 403 : 500).json({ error: e.message });
+  }
+});
+
+router.post("/orgs/:orgId/webhooks", (req, res) => {
+  try {
+    const created = webhooks.createWebhook({
+      orgId: req.params.orgId,
+      url: req.body?.url,
+      events: req.body?.events,
+      actorId: req.user.id,
+    });
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(e.code === "FORBIDDEN" ? 403 : e.code === "VALIDATION" ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.delete("/orgs/:orgId/webhooks/:webhookId", (req, res) => {
+  try {
+    res.json(
+      webhooks.deleteWebhook({
+        orgId: req.params.orgId,
+        webhookId: req.params.webhookId,
+        actorId: req.user.id,
+      })
+    );
+  } catch (e) {
+    res.status(e.code === "FORBIDDEN" ? 403 : e.code === "NOT_FOUND" ? 404 : 500).json({ error: e.message });
   }
 });
 

@@ -1,13 +1,28 @@
 import { config } from "../config.js";
 import { getSessionUser, publicUser } from "../services/auth.js";
+import { resolveApiKeyUser } from "../services/apiKeys.js";
 import { auditFromReq } from "../services/audit.js";
 
 export function attachUser(req, res, next) {
+  const auth = req.get?.("authorization") || "";
+  if (auth.toLowerCase().startsWith("bearer ")) {
+    const token = auth.slice(7).trim();
+    const resolved = resolveApiKeyUser(token);
+    if (resolved) {
+      req.sessionToken = null;
+      req.user = resolved.user;
+      req.userRaw = null;
+      req.apiKeyId = resolved.apiKeyId;
+      req.apiKeyScopes = resolved.scopes;
+      return next();
+    }
+  }
   const token = req.cookies?.[config.cookieName];
   const session = getSessionUser(token);
   req.sessionToken = token || null;
   req.user = session ? publicUser(session.user) : null;
   req.userRaw = session?.user || null;
+  req.apiKeyId = null;
   next();
 }
 

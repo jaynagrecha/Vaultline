@@ -55,6 +55,21 @@ export function audit({
     userAgent ? String(userAgent).slice(0, 300) : null,
     resolved
   );
+
+  if (orgId && resolved === "success") {
+    import("./webhooks.js")
+      .then((m) =>
+        m.dispatchWebhooks(orgId, action, {
+          orgId,
+          projectId,
+          actorId,
+          targetType,
+          targetId,
+          meta,
+        })
+      )
+      .catch(() => {});
+  }
 }
 
 /** Attach IP / UA from Express req onto audit calls. */

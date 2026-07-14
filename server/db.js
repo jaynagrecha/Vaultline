@@ -150,6 +150,45 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 `);
 
 try {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  scopes_json TEXT NOT NULL DEFAULT '["*"]',
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+`);
+} catch {
+  /* exists */
+}
+
+try {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS webhooks (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  events_json TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at INTEGER NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  last_status TEXT,
+  last_delivery_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_webhooks_org ON webhooks(org_id);
+`);
+} catch {
+  /* exists */
+}
+
+try {
   db.exec(`ALTER TABLE audit_events ADD COLUMN ip TEXT`);
 } catch {
   /* already exists */
