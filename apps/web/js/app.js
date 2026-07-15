@@ -73,7 +73,12 @@ async function api(path, opts = {}) {
   } catch {
     data = { error: text };
   }
-  if (!res.ok) throw new Error(data?.error || res.statusText);
+  if (!res.ok) {
+    const e = new Error(data?.error || res.statusText);
+    if (data?.needsActivation) e.needsActivation = true;
+    if (data?.email) e.email = data.email;
+    throw e;
+  }
   return data;
 }
 
@@ -128,11 +133,13 @@ function gate() {
         <div class="tabs" role="tablist">
           <button type="button" id="tabLogin" aria-selected="true">Sign in</button>
           <button type="button" id="tabRegister" aria-selected="false">Register</button>
+          <button type="button" id="tabActivate" aria-selected="false">Activate</button>
         </div>
         <div id="paneLogin">
           <label>Email</label><input class="field" id="lEmail" type="email" autocomplete="username">
           <label>Password</label><input class="field" id="lPass" type="password" autocomplete="current-password">
           <button class="btn btn-primary" type="button" id="btnLogin">Sign in</button>
+          <button class="btn btn-quiet" type="button" id="btnForgot" style="width:100%;margin-top:10px">Forgot password</button>
           <button class="btn btn-quiet hidden" type="button" id="btnOidc" style="width:100%;margin-top:10px">Login with SSO</button>
         </div>
         <div id="paneRegister" class="hidden">
@@ -141,9 +148,26 @@ function gate() {
           <label>Password (min 10)</label><input class="field" id="rPass" type="password" autocomplete="new-password">
           <button class="btn btn-primary" type="button" id="btnRegister">Create account</button>
         </div>
+        <div id="paneActivate" class="hidden">
+          <p class="fine" style="margin-top:0">Enter the 6-digit code from your email, or open the activation link.</p>
+          <label>Email</label><input class="field" id="aEmail" type="email" autocomplete="username">
+          <label>Activation code</label><input class="field" id="aCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+          <button class="btn btn-primary" type="button" id="btnActivate">Activate &amp; sign in</button>
+          <button class="btn btn-quiet" type="button" id="btnResendAct" style="width:100%;margin-top:10px">Resend code</button>
+        </div>
+        <div id="paneForgot" class="hidden">
+          <p class="fine" style="margin-top:0">We’ll email a reset code and link (if the account exists and is activated).</p>
+          <label>Email</label><input class="field" id="fEmail" type="email" autocomplete="username">
+          <button class="btn btn-primary" type="button" id="btnForgotSend">Send reset email</button>
+          <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
+          <label>Reset code</label><input class="field" id="fCode" inputmode="numeric" maxlength="6" placeholder="123456">
+          <label>New password (min 10)</label><input class="field" id="fPass" type="password" autocomplete="new-password">
+          <button class="btn btn-primary" type="button" id="btnResetPass">Set new password</button>
+          <button class="btn btn-quiet" type="button" id="btnBackLogin" style="width:100%;margin-top:10px">Back to sign in</button>
+        </div>
         <p class="form-err" id="gateErr"></p>
       </div>
-      <p class="fine">New accounts cannot create orgs until a platform admin grants that. SSO via OIDC_* when ready.</p>
+      <p class="fine">New accounts must activate via email before signing in. Org create still requires a platform admin grant.</p>
     </div>
   </div>`;
 }
@@ -1259,22 +1283,83 @@ async function paint() {
   }
 }
 
+function showGatePane(which) {
+  const panes = {
+    login: $("paneLogin"),
+    register: $("paneRegister"),
+    activate: $("paneActivate"),
+    forgot: $("paneForgot"),
+  };
+  const tabs = {
+    login: $("tabLogin"),
+    register: $("tabRegister"),
+    activate: $("tabActivate"),
+  };
+  for (const [k, el] of Object.entries(panes)) {
+    if (!el) continue;
+    el.classList.toggle("hidden", k !== which);
+  }
+  for (const [k, el] of Object.entries(tabs)) {
+    if (!el) continue;
+    el.setAttribute("aria-selected", k === which || (which === "forgot" && k === "login") ? "true" : "false");
+  }
+  if (which === "forgot" && tabs.login) tabs.login.setAttribute("aria-selected", "false");
+}
+
 function wireGate() {
   const err = (m) => ($("gateErr").textContent = m || "");
+  const params = new URLSearchParams(location.search);
+  const activateToken = params.get("activate");
+  const resetToken = params.get("reset");
+  const qEmail = params.get("email") || "";
+
   $("tabLogin").onclick = () => {
-    $("tabLogin").setAttribute("aria-selected", "true");
-    $("tabRegister").setAttribute("aria-selected", "false");
-    $("paneLogin").classList.remove("hidden");
-    $("paneRegister").classList.add("hidden");
+    showGatePane("login");
     err("");
   };
   $("tabRegister").onclick = () => {
-    $("tabRegister").setAttribute("aria-selected", "true");
-    $("tabLogin").setAttribute("aria-selected", "false");
-    $("paneRegister").classList.remove("hidden");
-    $("paneLogin").classList.add("hidden");
+    showGatePane("register");
     err("");
   };
+  $("tabActivate").onclick = () => {
+    showGatePane("activate");
+    err("");
+  };
+  $("btnForgot").onclick = () => {
+    showGatePane("forgot");
+    if ($("lEmail")?.value && $("fEmail")) $("fEmail").value = $("lEmail").value;
+    err("");
+  };
+  $("btnBackLogin").onclick = () => {
+    showGatePane("login");
+    err("");
+  };
+
+  if (qEmail) {
+    if ($("aEmail")) $("aEmail").value = qEmail;
+    if ($("fEmail")) $("fEmail").value = qEmail;
+    if ($("lEmail")) $("lEmail").value = qEmail;
+  }
+
+  if (activateToken) {
+    showGatePane("activate");
+    (async () => {
+      try {
+        await api("/auth/activate", {
+          method: "POST",
+          body: { email: qEmail || $("aEmail")?.value, token: activateToken },
+        });
+        history.replaceState({}, "", "/");
+        await boot();
+      } catch (e) {
+        err(e.message || "Activation failed — enter the code manually.");
+      }
+    })();
+  } else if (resetToken) {
+    showGatePane("forgot");
+    err("Enter a new password below (link token will be used).");
+  }
+
   if (state.oidcEnabled) $("btnOidc").classList.remove("hidden");
   $("btnOidc").onclick = async () => {
     try {
@@ -1290,15 +1375,73 @@ function wireGate() {
       await boot();
     } catch (e) {
       err(e.message);
+      if (e.needsActivation || /activate/i.test(e.message || "")) {
+        if ($("aEmail")) $("aEmail").value = $("lEmail").value;
+        showGatePane("activate");
+      }
     }
   };
   $("btnRegister").onclick = async () => {
     try {
-      await api("/auth/register", {
+      const res = await api("/auth/register", {
         method: "POST",
         body: { name: $("rName").value, email: $("rEmail").value, password: $("rPass").value },
       });
+      if ($("aEmail")) $("aEmail").value = res.email || $("rEmail").value;
+      showGatePane("activate");
+      err("");
+      toast(res.message || "Check your email for the activation code.");
+    } catch (e) {
+      err(e.message);
+    }
+  };
+  $("btnActivate").onclick = async () => {
+    try {
+      await api("/auth/activate", {
+        method: "POST",
+        body: { email: $("aEmail").value, code: $("aCode").value },
+      });
+      history.replaceState({}, "", "/");
       await boot();
+    } catch (e) {
+      err(e.message);
+    }
+  };
+  $("btnResendAct").onclick = async () => {
+    try {
+      const res = await api("/auth/resend-activation", {
+        method: "POST",
+        body: { email: $("aEmail").value || $("rEmail")?.value },
+      });
+      toast(res.message || "Sent.");
+      err("");
+    } catch (e) {
+      err(e.message);
+    }
+  };
+  $("btnForgotSend").onclick = async () => {
+    try {
+      const res = await api("/auth/forgot-password", { method: "POST", body: { email: $("fEmail").value } });
+      toast(res.message || "If the account exists, email was sent.");
+      err("");
+    } catch (e) {
+      err(e.message);
+    }
+  };
+  $("btnResetPass").onclick = async () => {
+    try {
+      const body = {
+        email: $("fEmail").value,
+        password: $("fPass").value,
+        code: $("fCode").value || undefined,
+        token: resetToken || undefined,
+      };
+      const res = await api("/auth/reset-password", { method: "POST", body });
+      history.replaceState({}, "", "/");
+      showGatePane("login");
+      if ($("lEmail")) $("lEmail").value = $("fEmail").value;
+      toast(res.message || "Password updated — sign in.");
+      err("");
     } catch (e) {
       err(e.message);
     }

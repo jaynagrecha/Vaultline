@@ -59,6 +59,14 @@ export const config = {
   },
   bootstrapAdminEmail: process.env.BOOTSTRAP_ADMIN_EMAIL || "",
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES) || 50 * 1024 * 1024,
+  smtp: {
+    host: process.env.SMTP_HOST || "",
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || "",
+  },
 };
 
 /** Ensure data / files / backups exist and are writable (Render Disk). */

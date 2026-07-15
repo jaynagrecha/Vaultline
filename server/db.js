@@ -189,6 +189,40 @@ CREATE INDEX IF NOT EXISTS idx_webhooks_org ON webhooks(org_id);
 }
 
 try {
+  db.exec(`ALTER TABLE users ADD COLUMN email_verified_at INTEGER`);
+} catch {
+  /* already exists */
+}
+
+try {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS email_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK(purpose IN ('activate','reset')),
+  code_hash TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_email_challenges_user ON email_challenges(user_id);
+`);
+} catch {
+  /* exists */
+}
+
+// Existing active users are treated as already verified (no re-activation).
+try {
+  db.exec(`
+    UPDATE users SET email_verified_at = COALESCE(email_verified_at, created_at)
+    WHERE status = 'active' AND email_verified_at IS NULL
+  `);
+} catch {
+  /* ignore */
+}
+
+try {
   db.exec(`ALTER TABLE audit_events ADD COLUMN ip TEXT`);
 } catch {
   /* already exists */

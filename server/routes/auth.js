@@ -17,6 +17,7 @@ import { setSessionCookie, clearSessionCookie, requireAuth, requirePlatformAdmin
 import { authLimiter } from "../middleware/rateLimit.js";
 import { audit, auditFromReq, exportAuditJson, listAudit, listAuditFilterOptions } from "../services/audit.js";
 import { beginOidcLogin, finishOidcLogin, oidcEnabled } from "../services/oidc.js";
+import { config } from "../config.js";
 import {
   listCatalogOrgs,
   listCatalogProjects,
@@ -30,6 +31,7 @@ const router = Router();
 router.get("/meta", (_req, res) => {
   res.json({
     oidcEnabled: oidcEnabled(),
+    smtpConfigured: !!(config.smtp?.host && config.smtp?.user && config.smtp?.pass),
     product: "Vaultline",
     version: "2.0.0",
   });
@@ -45,12 +47,70 @@ router.post("/register", authLimiter, async (req, res) => {
       password,
       isPlatformAdmin: shouldGrantPlatformAdminOnSignup(email),
     });
-    const session = createSession(user.id, { ip: req.ip, userAgent: req.get("user-agent") });
-    setSessionCookie(res, session.token, session.expiresAt);
-    res.status(201).json({ user: publicUser(user) });
+    const { sendActivationForUser } = await import("../services/emailAuth.js");
+    await sendActivationForUser(user);
+    res.status(201).json({
+      needsActivation: true,
+      email: user.email,
+      message: "Check your email for a 6-digit code or activation link.",
+    });
   } catch (e) {
     const status = e.code === "CONFLICT" ? 409 : e.code === "VALIDATION" ? 400 : 500;
     res.status(status).json({ error: e.message });
+  }
+});
+
+router.post("/activate", authLimiter, async (req, res) => {
+  try {
+    const { email, code, token } = req.body || {};
+    if (!email || (!code && !token)) {
+      return res.status(400).json({ error: "Email and code (or link token) required" });
+    }
+    const { activateAccount } = await import("../services/emailAuth.js");
+    const result = activateAccount({ email, code, token });
+    const session = createSession(result.user.id, { ip: req.ip, userAgent: req.get("user-agent") });
+    setSessionCookie(res, session.token, session.expiresAt);
+    res.json({ user: publicUser(result.user), alreadyActive: !!result.alreadyActive });
+  } catch (e) {
+    res.status(e.code === "FORBIDDEN" ? 403 : e.code === "VALIDATION" ? 400 : 500).json({ error: e.message });
+  }
+});
+
+router.post("/resend-activation", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: "Email required" });
+    const { resendActivation } = await import("../services/emailAuth.js");
+    await resendActivation(email);
+    res.json({ ok: true, message: "If that email needs activation, a new code was sent." });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/forgot-password", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: "Email required" });
+    const { requestPasswordReset } = await import("../services/emailAuth.js");
+    await requestPasswordReset(email);
+    res.json({ ok: true, message: "If that account exists, reset instructions were sent." });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/reset-password", authLimiter, async (req, res) => {
+  try {
+    const { email, code, token, password } = req.body || {};
+    if (!email || !password || (!code && !token)) {
+      return res.status(400).json({ error: "Email, new password, and code (or link token) required" });
+    }
+    const { resetPassword } = await import("../services/emailAuth.js");
+    await resetPassword({ email, code, token, password });
+    res.json({ ok: true, message: "Password updated — you can sign in." });
+  } catch (e) {
+    res.status(e.code === "VALIDATION" ? 400 : 500).json({ error: e.message });
   }
 });
 
@@ -71,7 +131,24 @@ router.post("/login", authLimiter, async (req, res) => {
     };
     if (!email || !password) return fail("missing");
     const user = findUserByEmail(email);
-    if (!user || user.status !== "active") return fail("unknown_or_disabled");
+    if (!user) return fail("unknown_or_disabled");
+    if (user.status === "pending" || !user.email_verified_at) {
+      audit({
+        actorId: null,
+        action: "user.login_failed",
+        targetType: "user",
+        outcome: "failure",
+        meta: { email: email || null, reason: "not_activated" },
+        ip: req.ip,
+        userAgent: req.get("user-agent"),
+      });
+      return res.status(403).json({
+        error: "Activate your account first — check your email for a code or link.",
+        needsActivation: true,
+        email: user.email,
+      });
+    }
+    if (user.status !== "active") return fail("unknown_or_disabled");
     const ok = await verifyPassword(user, password);
     if (!ok) return fail("bad_password");
     const session = createSession(user.id, { ip: req.ip, userAgent: req.get("user-agent") });

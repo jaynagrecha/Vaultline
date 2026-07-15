@@ -87,10 +87,10 @@ export async function registerUser({ email, name, password, isPlatformAdmin = fa
   const ts = now();
   const createOrg = canCreateOrg || isPlatformAdmin ? 1 : 0;
   db.prepare(
-    `INSERT INTO users (id, email, name, password_hash, status, is_platform_admin, can_create_org, created_at)
-     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`
+    `INSERT INTO users (id, email, name, password_hash, status, is_platform_admin, can_create_org, created_at, email_verified_at)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, NULL)`
   ).run(id, email.trim().toLowerCase(), name.trim(), password_hash, isPlatformAdmin ? 1 : 0, createOrg, ts);
-  audit({ actorId: id, action: "user.registered", targetType: "user", targetId: id, meta: { email } });
+  audit({ actorId: id, action: "user.registered", targetType: "user", targetId: id, meta: { email, pendingActivation: true } });
   return findUserById(id);
 }
 
@@ -123,6 +123,7 @@ export function getSessionUser(token) {
     .get(sha256(token), now());
   if (!row) return null;
   if (row.status !== "active") return null;
+  if (!row.email_verified_at) return null;
   return {
     sessionId: row.id,
     expiresAt: row.expires_at,

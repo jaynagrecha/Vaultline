@@ -35,9 +35,24 @@ In Render → **Disk**, set size to **5 GB** (or more). `render.yaml` requests 5
 4. Deploy. Open `https://YOUR-SERVICE.onrender.com/api/health` — expect `"ok": true`, `writable: true`, `dbOk: true`.
 5. Register the bootstrap email (or login), then use Admin console.
 
-## Health
+## Email (activation + forgot password)
 
-`GET /api/health` returns **503** if the disk is not writable or SQLite cannot open — Render will mark the service unhealthy.
+Set these on Render → **Environment** (SMTP):
+
+| Key | Example |
+|-----|---------|
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_SECURE` | `false` (use `true` for port 465) |
+| `SMTP_USER` | your SMTP username |
+| `SMTP_PASS` | app password / SMTP password |
+| `SMTP_FROM` | `Vaultline <you@yourdomain.com>` |
+| `PUBLIC_URL` | `https://vaultline-h15c.onrender.com` (used in email links) |
+
+**Flow:** Register → email with **6-digit code** + **activation link** → Activate tab / link → then Sign in.  
+**Forgot password:** Sign in → Forgot password → email code/link → set new password.
+
+Existing accounts already on the Disk stay active (no re-activation).
 
 ## Do not
 

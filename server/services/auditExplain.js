@@ -15,7 +15,11 @@ export const AUDIT_CATEGORIES = {
 /** @type {Record<string, { category: keyof typeof AUDIT_CATEGORIES, label: string, template: string }>} */
 export const AUDIT_ACTIONS = {
   // Auth
-  "user.registered": { category: "auth", label: "Registered", template: "{actor} created an account" },
+  "user.registered": { category: "auth", label: "Registered", template: "{actor} registered (pending email activation)" },
+  "user.activated": { category: "auth", label: "Activated", template: "{actor} activated their account via email" },
+  "user.activation_resent": { category: "auth", label: "Activation resent", template: "{actor} requested a new activation email" },
+  "user.password_reset_requested": { category: "auth", label: "Password reset requested", template: "{actor} requested a password reset email" },
+  "user.password_reset": { category: "auth", label: "Password reset", template: "{actor} set a new password via reset code/link" },
   "user.login": { category: "auth", label: "Signed in", template: "{actor} signed in" },
   "user.login_failed": { category: "auth", label: "Sign-in failed", template: "Failed sign-in attempt{email}" },
   "user.login_oidc": { category: "auth", label: "SSO sign-in", template: "{actor} signed in with SSO" },
