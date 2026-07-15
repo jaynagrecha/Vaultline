@@ -61,15 +61,18 @@ export async function finishOidcLogin(query) {
     const id = uuid();
     const asAdmin = shouldGrantPlatformAdminOnSignup(email) ? 1 : 0;
     db.prepare(
-      `INSERT INTO users (id, email, name, password_hash, status, is_platform_admin, oidc_sub, created_at)
-       VALUES (?, ?, ?, NULL, 'active', ?, ?, ?)`
-    ).run(id, email.toLowerCase(), name, asAdmin, claims.sub || null, now());
+      `INSERT INTO users (id, email, name, password_hash, status, is_platform_admin, oidc_sub, created_at, email_verified_at)
+       VALUES (?, ?, ?, NULL, 'active', ?, ?, ?, ?)`
+    ).run(id, email.toLowerCase(), name, asAdmin, claims.sub || null, now(), now());
     user = findUserById(id);
   } else if (user.status !== "active") {
     throw new Error("Account disabled");
   } else {
     if (claims.sub) {
       db.prepare(`UPDATE users SET oidc_sub = ? WHERE id = ?`).run(claims.sub, user.id);
+    }
+    if (!user.email_verified_at) {
+      db.prepare(`UPDATE users SET email_verified_at = ? WHERE id = ?`).run(now(), user.id);
     }
     if (shouldGrantPlatformAdminOnSignup(email) && !user.is_platform_admin) {
       db.prepare(`UPDATE users SET is_platform_admin = 1 WHERE id = ?`).run(user.id);
